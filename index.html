@@ -1,0 +1,1220 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>PAC-MATH</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- React, ReactDOM & Babel CDNs -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  
+  <!-- Google Fonts for Retro Arcade Style -->
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Fredoka:wght@400;600&display=swap" rel="stylesheet">
+  
+  <style>
+    body {
+      font-family: 'Fredoka', sans-serif;
+      touch-action: manipulation;
+    }
+    .retro-font {
+      font-family: 'Press Start 2P', cursive;
+    }
+    /* Mengelakkan highlight biru pada peranti mudah alih */
+    button, div {
+      -webkit-tap-highlight-color: transparent;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-white min-h-screen">
+
+  <!-- Tempat React me-render keseluruhan App -->
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    // Database Khas Soalan Tolak Tahun 1 (Lingkungan 18)
+    const tolakTahun1List = [
+      { n1: 18, n2: 9, ans: 9 },
+      { n1: 17, n2: 9, ans: 8 }, { n1: 17, n2: 8, ans: 9 },
+      { n1: 16, n2: 9, ans: 7 }, { n1: 16, n2: 8, ans: 8 }, { n1: 16, n2: 7, ans: 9 },
+      { n1: 15, n2: 9, ans: 6 }, { n1: 15, n2: 8, ans: 7 }, { n1: 15, n2: 7, ans: 8 }, { n1: 15, n2: 6, ans: 9 },
+      { n1: 14, n2: 9, ans: 5 }, { n1: 14, n2: 8, ans: 6 }, { n1: 14, n2: 7, ans: 7 }, { n1: 14, n2: 6, ans: 8 }, { n1: 14, n2: 5, ans: 9 },
+      { n1: 13, n2: 9, ans: 4 }, { n1: 13, n2: 8, ans: 5 }, { n1: 13, n2: 7, ans: 6 }, { n1: 13, n2: 6, ans: 7 }, { n1: 13, n2: 5, ans: 8 }, { n1: 13, n2: 4, ans: 9 },
+      { n1: 12, n2: 9, ans: 3 }, { n1: 12, n2: 8, ans: 4 }, { n1: 12, n2: 7, ans: 5 }, { n1: 12, n2: 6, ans: 6 }, { n1: 12, n2: 5, ans: 7 }, { n1: 12, n2: 4, ans: 8 }, { n1: 12, n2: 3, ans: 9 },
+      { n1: 11, n2: 9, ans: 2 }, { n1: 11, n2: 8, ans: 3 }, { n1: 11, n2: 7, ans: 4 }, { n1: 11, n2: 6, ans: 5 }, { n1: 11, n2: 5, ans: 6 }, { n1: 11, n2: 4, ans: 7 }, { n1: 11, n2: 3, ans: 8 }, { n1: 11, n2: 2, ans: 9 }
+    ];
+
+    // Grid details (15 columns x 15 rows)
+    const gridSize = 15;
+    const canvasSize = 450;
+    const tileSize = canvasSize / gridSize; // 30px per tile
+
+    // Map definition
+    // 0 = Kosong, 1 = Dinding, 2 = Dot Biasa (Kecil), 4 = Math Dot (Besar & Berkelip), 3 = Terowong Sisi
+    const initialMap = [
+      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+      [1,4,2,2,2,2,1,2,1,2,2,2,2,4,1],
+      [1,2,1,1,1,2,1,2,1,2,1,1,1,2,1],
+      [1,2,1,4,2,2,2,2,2,2,2,4,1,2,1],
+      [1,2,1,2,1,1,1,0,1,1,1,2,1,2,1],
+      [1,2,2,2,1,0,0,0,0,0,1,2,2,2,1],
+      [1,1,1,2,1,0,1,1,1,0,1,2,1,1,1],
+      [3,0,0,2,0,0,1,0,1,0,0,2,0,0,3], // Terowong Sisi
+      [1,1,1,2,1,0,1,1,1,0,1,2,1,1,1],
+      [1,2,2,2,1,0,0,0,0,0,1,2,2,2,1],
+      [1,2,1,2,1,1,1,1,1,1,1,2,1,2,1],
+      [1,2,1,4,2,2,2,1,2,2,2,4,1,2,1],
+      [1,2,1,1,1,2,2,1,2,2,1,1,1,2,1],
+      [1,4,2,2,2,2,2,2,2,2,2,2,2,4,1],
+      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+    ];
+
+    // Web Audio Synthesizer Sound Engine
+    let audioCtx = null;
+    function playSynthSound(type) {
+      try {
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (audioCtx.state === 'suspended') {
+          audioCtx.resume();
+        }
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        const now = audioCtx.currentTime;
+
+        if (type === 'eat_small') {
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(450, now);
+          osc.frequency.exponentialRampToValueAtTime(650, now + 0.05);
+          gain.gain.setValueAtTime(0.04, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+          osc.start(now);
+          osc.stop(now + 0.05);
+        } else if (type === 'eat_big') {
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(300, now);
+          osc.frequency.exponentialRampToValueAtTime(1100, now + 0.12);
+          gain.gain.setValueAtTime(0.09, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+          osc.start(now);
+          osc.stop(now + 0.12);
+        } else if (type === 'correct') {
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(523.25, now); // C5
+          osc.frequency.setValueAtTime(659.25, now + 0.08); // E5
+          osc.frequency.setValueAtTime(783.99, now + 0.16); // G5
+          gain.gain.setValueAtTime(0.12, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+          osc.start(now);
+          osc.stop(now + 0.4);
+        } else if (type === 'incorrect') {
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(130, now);
+          osc.frequency.linearRampToValueAtTime(90, now + 0.35);
+          gain.gain.setValueAtTime(0.15, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+          osc.start(now);
+          osc.stop(now + 0.45);
+        } else if (type === 'death') {
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(600, now);
+          osc.frequency.linearRampToValueAtTime(100, now + 0.65);
+          gain.gain.setValueAtTime(0.15, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
+          osc.start(now);
+          osc.stop(now + 0.75);
+        } else if (type === 'level_up') {
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(300, now);
+          osc.frequency.exponentialRampToValueAtTime(1500, now + 0.5);
+          gain.gain.setValueAtTime(0.15, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+          osc.start(now);
+          osc.stop(now + 0.5);
+        }
+      } catch (err) {
+        console.warn('AudioContext disekat oleh sekuriti pelayar/iframe:', err);
+      }
+    }
+
+    function App() {
+      const [gameState, setGameState] = useState('START'); // START, PLAYING, MATH_QUESTION, LEVEL_UP, GAMEOVER
+      const [score, setScore] = useState(0);
+      const [lives, setLives] = useState(3);
+      const [currentLevel, setCurrentLevel] = useState(1);
+      const [dotsRemaining, setDotsRemaining] = useState(0);
+      const [liveDateTime, setLiveDateTime] = useState('');
+      
+      const [difficulty, setDifficulty] = useState('senang');
+      const [operation, setOperation] = useState('tolak');
+      
+      const [currentQuestion, setCurrentQuestion] = useState(null);
+      const [timerWidth, setTimerWidth] = useState(100);
+      const [timerDanger, setTimerDanger] = useState(false);
+      
+      const [playerName, setPlayerName] = useState('');
+      const [leaderboard, setLeaderboard] = useState([]);
+      const [showSaveArea, setShowSaveArea] = useState(true);
+      const [showExitModal, setShowExitModal] = useState(false);
+      
+      const [toast, setToast] = useState({ show: false, msg: '', success: true });
+
+      // Canvas refs
+      const canvasRef = useRef(null);
+      const requestRef = useRef(null);
+      
+      // Mutable game state refs for Canvas render synchronization (Antara muka Canvas & React)
+      const mapRef = useRef(JSON.parse(JSON.stringify(initialMap)));
+      const playerRef = useRef({
+        gridX: 7, gridY: 11,
+        x: 7 * tileSize + tileSize / 2, y: 11 * tileSize + tileSize / 2,
+        prevGridX: 7, prevGridY: 11,
+        dirX: 0, dirY: 0,
+        nextDirX: 0, nextDirY: 0,
+        speed: 2.5,
+        mouthOpening: 0.2, mouthDir: 1
+      });
+      const ghostsRef = useRef([]);
+      const gameStateRef = useRef('START');
+      const isGameFocused = useRef(false);
+
+      // Safe Audio Trigger Helper
+      const initAudio = () => {
+        try {
+          if (!audioCtx) {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          }
+          if (audioCtx.state === 'suspended') {
+            audioCtx.resume();
+          }
+        } catch (e) {
+          console.warn('Gagal memulakan enjin audio:', e);
+        }
+      };
+
+      // Tarikh & Masa Live update (Real-time!)
+      useEffect(() => {
+        const updateTime = () => {
+          const now = new Date();
+          setLiveDateTime(now.toLocaleDateString('ms-MY', {
+            weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
+            hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+          }));
+        };
+        updateTime();
+        const timer = setInterval(updateTime, 1000);
+        return () => clearInterval(timer);
+      }, []);
+
+      // Leaderboard management (Safe storage for Google iframe GAS)
+      const fetchLeaderboard = useCallback(() => {
+        try {
+          const data = localStorage.getItem('math_pacman_leaderboard_v1');
+          if (data) {
+            setLeaderboard(JSON.parse(data));
+          } else {
+            const defaults = [
+              { name: 'ALEX', score: 35, level: 2, date: '16/07/2026' },
+              { name: 'SITI', score: 28, level: 1, date: '16/07/2026' },
+              { name: 'APIN', score: 15, level: 1, date: '16/07/2026' }
+            ];
+            setLeaderboard(defaults);
+          }
+        } catch (e) {
+          // Fallback if localstorage access is blocked inside iframe
+          setLeaderboard([
+            { name: 'ALEX', score: 35, level: 2, date: '16/07/2026' },
+            { name: 'SITI', score: 28, level: 1, date: '16/07/2026' },
+            { name: 'APIN', score: 15, level: 1, date: '16/07/2026' }
+          ]);
+        }
+      }, []);
+
+      useEffect(() => {
+        fetchLeaderboard();
+      }, [fetchLeaderboard]);
+
+      const handleSaveHighScore = () => {
+        if (!playerName.trim()) {
+          triggerToast("Masukkan nama murid dulu bah!", false);
+          return;
+        }
+        let updatedList = [];
+        try {
+          const data = localStorage.getItem('math_pacman_leaderboard_v1');
+          updatedList = data ? JSON.parse(data) : [...leaderboard];
+        } catch (e) {
+          updatedList = [...leaderboard];
+        }
+
+        updatedList.push({
+          name: playerName.trim().toUpperCase(),
+          score: score,
+          level: currentLevel,
+          date: new Date().toLocaleDateString('ms-MY')
+        });
+
+        updatedList.sort((a, b) => b.score - a.score);
+        updatedList = updatedList.slice(0, 10);
+
+        try {
+          localStorage.setItem('math_pacman_leaderboard_v1', JSON.stringify(updatedList));
+        } catch (e) {
+          // do nothing, let memory fallback rule
+        }
+        setLeaderboard(updatedList);
+        setShowSaveArea(false);
+        triggerToast("Rekod disimpan!", true);
+      };
+
+      const triggerToast = (msg, success) => {
+        setToast({ show: true, msg, success });
+        setTimeout(() => setToast({ show: false, msg: '', success: true }), 2500);
+      };
+
+      // Spawning Ghost Setup
+      const spawnGhosts = useCallback((level) => {
+        const count = Math.min(2 + (level - 1), 4);
+        const configs = [
+          { id: 1, color: '#ef4444', spawnX: 7, spawnY: 5 },
+          { id: 2, color: '#06b6d4', spawnX: 7, spawnY: 9 },
+          { id: 3, color: '#ec4899', spawnX: 5, spawnY: 7 },
+          { id: 4, color: '#f97316', spawnX: 9, spawnY: 7 }
+        ];
+
+        const spawned = [];
+        for (let i = 0; i < count; i++) {
+          const conf = configs[i];
+          spawned.push({
+            id: conf.id,
+            gridX: conf.spawnX, gridY: conf.spawnY,
+            x: conf.spawnX * tileSize + tileSize / 2,
+            y: conf.spawnY * tileSize + tileSize / 2,
+            dirX: i % 2 === 0 ? 1 : -1, dirY: 0,
+            color: conf.color,
+            speed: 1.5 + (level * 0.1)
+          });
+        }
+        ghostsRef.current = spawned;
+      }, []);
+
+      // Initialize Map, Dot Count, Player, and Ghosts
+      const startNewGame = useCallback((levelReset = false) => {
+        if (!levelReset) {
+          setScore(0);
+          setLives(3);
+          setCurrentLevel(1);
+        }
+        
+        mapRef.current = JSON.parse(JSON.stringify(initialMap));
+        
+        // Count dots
+        let count = 0;
+        for (let r = 0; r < gridSize; r++) {
+          for (let c = 0; c < gridSize; c++) {
+            if (mapRef.current[r][c] === 2 || mapRef.current[r][c] === 4) {
+              count++;
+            }
+          }
+        }
+        setDotsRemaining(count);
+
+        // Reset positions
+        playerRef.current = {
+          gridX: 7, gridY: 11,
+          x: 7 * tileSize + tileSize / 2, y: 11 * tileSize + tileSize / 2,
+          prevGridX: 7, prevGridY: 11,
+          dirX: 0, dirY: 0,
+          nextDirX: 0, nextDirY: 0,
+          speed: 2.5,
+          mouthOpening: 0.2, mouthDir: 1
+        };
+
+        spawnGhosts(levelReset ? currentLevel : 1);
+        setShowSaveArea(true);
+        setPlayerName('');
+      }, [spawnGhosts, currentLevel]);
+
+      // Math Generator Engine
+      const triggerMathQuestion = (gx, gy) => {
+        playSynthSound('eat_big');
+        gameStateRef.current = 'MATH_QUESTION';
+        setGameState('MATH_QUESTION');
+
+        let num1 = 0, num2 = 0, correctAns = 0, qText = '';
+        let op = operation;
+        if (op === 'campuran') {
+          const ops = ['tambah', 'tolak', 'darab', 'bahagi'];
+          op = ops[Math.floor(Math.random() * ops.length)];
+        }
+
+        if (op === 'tolak' && difficulty === 'senang') {
+          const qSelected = tolakTahun1List[Math.floor(Math.random() * tolakTahun1List.length)];
+          num1 = qSelected.n1;
+          num2 = qSelected.n2;
+          correctAns = qSelected.ans;
+          qText = `${num1} - ${num2}`;
+        } else {
+          if (difficulty === 'senang') {
+            if (op === 'tambah') {
+              num1 = getRandomInt(1, 9); num2 = getRandomInt(1, 9);
+              correctAns = num1 + num2; qText = `${num1} + ${num2}`;
+            } else if (op === 'tolak') {
+              num1 = getRandomInt(2, 10); num2 = getRandomInt(1, num1 - 1);
+              correctAns = num1 - num2; qText = `${num1} - ${num2}`;
+            } else if (op === 'darab') {
+              num1 = getRandomInt(1, 5); num2 = getRandomInt(1, 9);
+              correctAns = num1 * num2; qText = `${num1} × ${num2}`;
+            } else {
+              num2 = getRandomInt(2, 5); correctAns = getRandomInt(1, 5);
+              num1 = num2 * correctAns; qText = `${num1} ÷ ${num2}`;
+            }
+          } else if (difficulty === 'sederhana') {
+            if (op === 'tambah') {
+              num1 = getRandomInt(10, 49); num2 = getRandomInt(10, 49);
+              correctAns = num1 + num2; qText = `${num1} + ${num2}`;
+            } else if (op === 'tolak') {
+              num1 = getRandomInt(20, 99); num2 = getRandomInt(10, num1 - 1);
+              correctAns = num1 - num2; qText = `${num1} - ${num2}`;
+            } else if (op === 'darab') {
+              num1 = getRandomInt(2, 9); num2 = getRandomInt(3, 12);
+              correctAns = num1 * num2; qText = `${num1} × ${num2}`;
+            } else {
+              num2 = getRandomInt(3, 9); correctAns = getRandomInt(2, 12);
+              num1 = num2 * correctAns; qText = `${num1} ÷ ${num2}`;
+            }
+          } else { // susah
+            if (op === 'tambah') {
+              num1 = getRandomInt(50, 499); num2 = getRandomInt(50, 499);
+              correctAns = num1 + num2; qText = `${num1} + ${num2}`;
+            } else if (op === 'tolak') {
+              num1 = getRandomInt(100, 999); num2 = getRandomInt(50, num1 - 1);
+              correctAns = num1 - num2; qText = `${num1} - ${num2}`;
+            } else if (op === 'darab') {
+              num1 = getRandomInt(8, 16); num2 = getRandomInt(11, 20);
+              correctAns = num1 * num2; qText = `${num1} × ${num2}`;
+            } else {
+              num2 = getRandomInt(6, 15); correctAns = getRandomInt(8, 20);
+              num1 = num2 * correctAns; qText = `${num1} ÷ ${num2}`;
+            }
+          }
+        }
+
+        // Options generator
+        let wrongAnswers = new Set();
+        while (wrongAnswers.size < 3) {
+          let deviation = getRandomInt(-10, 10);
+          if (difficulty === 'senang') deviation = getRandomInt(-4, 4);
+          let badAns = correctAns + deviation;
+          if (badAns !== correctAns && badAns >= 0) wrongAnswers.add(badAns);
+        }
+
+        let optionsList = Array.from(wrongAnswers);
+        optionsList.push(correctAns);
+        optionsList.sort(() => Math.random() - 0.5);
+
+        const duration = difficulty === 'senang' ? 18 : (difficulty === 'sederhana' ? 14 : 10);
+        setCurrentQuestion({
+          text: qText,
+          ans: correctAns,
+          options: optionsList,
+          timer: duration,
+          maxTimer: duration,
+          gridX: gx,
+          gridY: gy
+        });
+        setTimerWidth(100);
+        setTimerDanger(false);
+      };
+
+      // Math Question Timer ticks
+      useEffect(() => {
+        if (gameState !== 'MATH_QUESTION' || !currentQuestion) return;
+        
+        let secondsLeft = currentQuestion.timer;
+        const interval = setInterval(() => {
+          secondsLeft -= 0.1;
+          const percent = (secondsLeft / currentQuestion.maxTimer) * 100;
+          setTimerWidth(percent);
+
+          if (secondsLeft < 3) {
+            setTimerDanger(true);
+          }
+
+          if (secondsLeft <= 0) {
+            clearInterval(interval);
+            resolveMathAnswer(false);
+          }
+        }, 100);
+
+        return () => clearInterval(interval);
+      }, [gameState, currentQuestion]);
+
+      const resolveMathAnswer = (isCorrect) => {
+        if (isCorrect) {
+          playSynthSound('correct');
+          setScore(prev => prev + 2);
+          setDotsRemaining(prev => {
+            const nextDots = prev - 1;
+            if (nextDots <= 0) {
+              gameStateRef.current = 'LEVEL_UP';
+              setGameState('LEVEL_UP');
+              playSynthSound('level_up');
+            } else {
+              gameStateRef.current = 'PLAYING';
+              setGameState('PLAYING');
+            }
+            return nextDots;
+          });
+          // Remove math dot
+          mapRef.current[currentQuestion.gridY][currentQuestion.gridX] = 0;
+          triggerToast("Jawapan Betul! +2 Mata", true);
+        } else {
+          playSynthSound('incorrect');
+          // Undur pacman
+          playerRef.current.gridX = playerRef.current.prevGridX;
+          playerRef.current.gridY = playerRef.current.prevGridY;
+          playerRef.current.x = playerRef.current.gridX * tileSize + tileSize / 2;
+          playerRef.current.y = playerRef.current.gridY * tileSize + tileSize / 2;
+          playerRef.current.dirX = 0;
+          playerRef.current.dirY = 0;
+          playerRef.current.nextDirX = 0;
+          playerRef.current.nextDirY = 0;
+
+          triggerToast("Jawapan salah! Dot besar kekal.", false);
+          gameStateRef.current = 'PLAYING';
+          setGameState('PLAYING');
+        }
+        setCurrentQuestion(null);
+      };
+
+      const checkAnswer = (optionIndex) => {
+        initAudio();
+        const selected = currentQuestion.options[optionIndex];
+        const isCorrect = selected === currentQuestion.ans;
+        resolveMathAnswer(isCorrect);
+      };
+
+      const handleConfirmExit = () => {
+        setShowExitModal(false);
+        gameStateRef.current = 'START';
+        setGameState('START');
+      };
+
+      const handleCancelExit = () => {
+        setShowExitModal(false);
+        gameStateRef.current = 'PLAYING';
+        setGameState('PLAYING');
+      };
+
+      // Input redirection
+      const handleTriggerExit = () => {
+        if (gameState === 'PLAYING') {
+          gameStateRef.current = 'PAUSED';
+          setGameState('PAUSED');
+          setShowExitModal(true);
+        }
+      };
+
+      const setDesiredDirection = (dx, dy) => {
+        playerRef.current.nextDirX = dx;
+        playerRef.current.nextDirY = dy;
+        
+        // If completely stopped, apply immediately
+        if (playerRef.current.dirX === 0 && playerRef.current.dirY === 0) {
+          const tgx = playerRef.current.gridX + dx;
+          const tgy = playerRef.current.gridY + dy;
+          if (!isWall(tgx, tgy)) {
+            playerRef.current.dirX = dx;
+            playerRef.current.dirY = dy;
+          }
+        }
+      };
+
+      // Game state helper
+      const isWall = (gx, gy) => {
+        if (gx < 0 || gx >= gridSize || gy < 0 || gy >= gridSize) return false;
+        return mapRef.current[gy][gx] === 1;
+      };
+
+      const isAligned = (entity) => {
+        const cx = entity.gridX * tileSize + tileSize / 2;
+        const cy = entity.gridY * tileSize + tileSize / 2;
+        return Math.abs(entity.x - cx) < entity.speed && Math.abs(entity.y - cy) < entity.speed;
+      };
+
+      // Keyboard support
+      useEffect(() => {
+        const handleKeyDown = (e) => {
+          if (!isGameFocused.current || gameStateRef.current !== 'PLAYING') return;
+
+          const blockKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'w', 's', 'a', 'd', 'W', 'S', 'A', 'D'];
+          if (blockKeys.includes(e.key)) {
+            e.preventDefault();
+          }
+
+          let dx = 0, dy = 0;
+          if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') { dx = 0; dy = -1; }
+          else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') { dx = 0; dy = 1; }
+          else if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') { dx = -1; dy = 0; }
+          else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') { dx = 1; dy = 0; }
+
+          if (dx !== 0 || dy !== 0) {
+            setDesiredDirection(dx, dy);
+          }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+      }, []);
+
+      // Canvas Rendering Loop
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+
+        const updateLoop = () => {
+          const p = playerRef.current;
+          const map = mapRef.current;
+
+          if (gameStateRef.current === 'PLAYING') {
+            // Player Motion
+            if (isAligned(p)) {
+              p.x = p.gridX * tileSize + tileSize / 2;
+              p.y = p.gridY * tileSize + tileSize / 2;
+
+              if (p.nextDirX !== 0 || p.nextDirY !== 0) {
+                const tgx = p.gridX + p.nextDirX;
+                const tgy = p.gridY + p.nextDirY;
+                if (!isWall(tgx, tgy)) {
+                  p.dirX = p.nextDirX;
+                  p.dirY = p.nextDirY;
+                }
+              }
+
+              const ngx = p.gridX + p.dirX;
+              const ngy = p.gridY + p.dirY;
+
+              if (isWall(ngx, ngy)) {
+                p.dirX = 0;
+                p.dirY = 0;
+              } else {
+                p.prevGridX = p.gridX;
+                p.prevGridY = p.gridY;
+                p.gridX += p.dirX;
+                p.gridY += p.dirY;
+              }
+            }
+
+            p.x += p.dirX * p.speed;
+            p.y += p.dirY * p.speed;
+
+            // Wrap side tunnels
+            if (p.x < 0) {
+              p.gridX = gridSize - 1;
+              p.x = p.gridX * tileSize + tileSize / 2;
+            } else if (p.x > canvasSize) {
+              p.gridX = 0;
+              p.x = p.gridX * tileSize + tileSize / 2;
+            }
+
+            // Animate mouth
+            if (p.dirX !== 0 || p.dirY !== 0) {
+              p.mouthOpening += 0.05 * p.mouthDir;
+              if (p.mouthOpening >= 0.4 || p.mouthOpening <= 0.1) {
+                p.mouthDir *= -1;
+              }
+            }
+
+            // Ghost Motion
+            ghostsRef.current.forEach(g => {
+              if (isAligned(g)) {
+                g.x = g.gridX * tileSize + tileSize / 2;
+                g.y = g.gridY * tileSize + tileSize / 2;
+
+                let opts = [];
+                const directions = [{ dx: 0, dy: -1 }, { dx: 0, dy: 1 }, { dx: -1, dy: 0 }, { dx: 1, dy: 0 }];
+                directions.forEach(d => {
+                  const tx = g.gridX + d.dx;
+                  const ty = g.gridY + d.dy;
+                  if (!isWall(tx, ty)) {
+                    const isBack = (d.dx === -g.dirX && d.dy === -g.dirY);
+                    opts.push({ d, isBack });
+                  }
+                });
+
+                if (opts.length > 0) {
+                  let filtered = opts.filter(o => !o.isBack);
+                  if (filtered.length === 0) filtered = opts;
+
+                  let chosen;
+                  const targetChance = 0.2 + (currentLevel * 0.05);
+                  if (Math.random() < Math.min(targetChance, 0.5)) {
+                    // Chase Pacman
+                    let minD = Infinity;
+                    let best = filtered[0];
+                    filtered.forEach(o => {
+                      const tx = g.gridX + o.d.dx;
+                      const ty = g.gridY + o.d.dy;
+                      const dist = Math.hypot(tx - p.gridX, ty - p.gridY);
+                      if (dist < minD) {
+                        minD = dist;
+                        best = o;
+                      }
+                    });
+                    chosen = best.d;
+                  } else {
+                    chosen = filtered[Math.floor(Math.random() * filtered.length)].d;
+                  }
+                  g.dirX = chosen.dx;
+                  g.dirY = chosen.dy;
+                }
+                g.gridX += g.dirX;
+                g.gridY += g.dirY;
+              }
+              g.x += g.dirX * g.speed;
+              g.y += g.dirY * g.speed;
+
+              if (g.x < 0) {
+                g.gridX = gridSize - 1;
+                g.x = g.gridX * tileSize + tileSize / 2;
+              } else if (g.x > canvasSize) {
+                g.gridX = 0;
+                g.x = g.gridX * tileSize + tileSize / 2;
+              }
+            });
+
+            // Collisions Engine
+            if (isAligned(p)) {
+              const currentTile = map[p.gridY][p.gridX];
+              if (currentTile === 2) {
+                map[p.gridY][p.gridX] = 0;
+                setScore(prev => prev + 1);
+                setDotsRemaining(prev => {
+                  const nextDots = prev - 1;
+                  if (nextDots <= 0) {
+                    gameStateRef.current = 'LEVEL_UP';
+                    setGameState('LEVEL_UP');
+                    playSynthSound('level_up');
+                  }
+                  return nextDots;
+                });
+                playSynthSound('eat_small');
+              } else if (currentTile === 4) {
+                triggerMathQuestion(p.gridX, p.gridY);
+              }
+            }
+
+            // Ghost overlap check
+            ghostsRef.current.forEach(g => {
+              const dist = Math.hypot(p.x - g.x, p.y - g.y);
+              if (dist < tileSize * 0.7) {
+                // Collided!
+                playSynthSound('death');
+                setLives(prev => {
+                  const nextLives = prev - 1;
+                  if (nextLives <= 0) {
+                    gameStateRef.current = 'GAMEOVER';
+                    setGameState('GAMEOVER');
+                  } else {
+                    gameStateRef.current = 'MATH_QUESTION'; // safe break state
+                    setGameState('MATH_QUESTION');
+                    triggerToast("Hantu tangkap kamu! Nyawa -1.", false);
+                    setTimeout(() => {
+                      resetPlayerGhostPositions();
+                      gameStateRef.current = 'PLAYING';
+                      setGameState('PLAYING');
+                    }, 1500);
+                  }
+                  return nextLives;
+                });
+              }
+            });
+          }
+
+          // RENDER FRAME
+          ctx.fillStyle = '#020617';
+          ctx.fillRect(0, 0, canvasSize, canvasSize);
+
+          // Draw Map Grid
+          for (let r = 0; r < gridSize; r++) {
+            for (let c = 0; c < gridSize; c++) {
+              const x = c * tileSize;
+              const y = r * tileSize;
+
+              if (map[r][c] === 1) {
+                ctx.fillStyle = '#1e1b4b'; 
+                ctx.fillRect(x + 1, y + 1, tileSize - 2, tileSize - 2);
+                ctx.strokeStyle = '#4338ca'; 
+                ctx.lineWidth = 1.5;
+                ctx.strokeRect(x + 2, y + 2, tileSize - 4, tileSize - 4);
+              } else if (map[r][c] === 2) {
+                // Small gold dot
+                ctx.beginPath();
+                ctx.arc(x + tileSize / 2, y + tileSize / 2, 3.5, 0, Math.PI * 2);
+                ctx.fillStyle = '#facc15'; 
+                ctx.fill();
+              } else if (map[r][c] === 4) {
+                // Big pulsing cyan math dot
+                const cx = x + tileSize / 2;
+                const cy = y + tileSize / 2;
+                const pulse = 1 + Math.sin(Date.now() * 0.01) * 0.25;
+                
+                ctx.beginPath();
+                ctx.arc(cx, cy, 7.5 * pulse, 0, Math.PI * 2);
+                ctx.fillStyle = '#06b6d4'; 
+                ctx.globalAlpha = 0.3;
+                ctx.fill();
+                ctx.globalAlpha = 1.0;
+
+                ctx.beginPath();
+                ctx.arc(cx, cy, 5.5, 0, Math.PI * 2);
+                ctx.fillStyle = '#06b6d4'; 
+                ctx.fill();
+
+                ctx.beginPath();
+                ctx.arc(cx, cy, 2, 0, Math.PI * 2);
+                ctx.fillStyle = '#ffffff';
+                ctx.fill();
+              }
+            }
+          }
+
+          // Draw Pac-man
+          ctx.save();
+          ctx.translate(p.x, p.y);
+          let rotation = 0;
+          if (p.dirX === 1) rotation = 0;
+          else if (p.dirX === -1) rotation = Math.PI;
+          else if (p.dirY === 1) rotation = Math.PI / 2;
+          else if (p.dirY === -1) rotation = -Math.PI / 2;
+          ctx.rotate(rotation);
+
+          ctx.beginPath();
+          ctx.arc(0, 0, tileSize / 2 - 2, p.mouthOpening * Math.PI, (2 - p.mouthOpening) * Math.PI);
+          ctx.lineTo(0, 0);
+          ctx.fillStyle = '#facc15'; 
+          ctx.fill();
+
+          ctx.beginPath();
+          ctx.arc(2, -5, 2.5, 0, Math.PI * 2);
+          ctx.fillStyle = '#000000';
+          ctx.fill();
+          ctx.restore();
+
+          // Draw Ghosts
+          ghostsRef.current.forEach(g => {
+            ctx.save();
+            ctx.translate(g.x, g.y);
+            const w = tileSize - 6;
+            const h = tileSize - 6;
+
+            ctx.beginPath();
+            ctx.arc(0, -2, w / 2, Math.PI, 0, false);
+            ctx.lineTo(w / 2, h / 2);
+            
+            const step = w / 3;
+            const isUp = (Math.floor(Date.now() / 150) % 2) === 0;
+            if (isUp) {
+              ctx.lineTo(w/2 - step*0.5, h/2 - 3);
+              ctx.lineTo(w/2 - step, h/2);
+              ctx.lineTo(w/2 - step*1.5, h/2 - 3);
+              ctx.lineTo(w/2 - step*2, h/2);
+              ctx.lineTo(-w/2, h/2);
+            } else {
+              ctx.lineTo(w/2 - step*0.5, h/2);
+              ctx.lineTo(w/2 - step, h/2 - 3);
+              ctx.lineTo(w/2 - step*1.5, h/2);
+              ctx.lineTo(w/2 - step*2, h/2 - 3);
+              ctx.lineTo(-w/2, h/2);
+            }
+            ctx.closePath();
+            ctx.fillStyle = g.color;
+            ctx.fill();
+
+            // Eyes
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(-4, -4, 4, 0, Math.PI * 2);
+            ctx.arc(4, -4, 4, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#0f172a';
+            ctx.beginPath();
+            ctx.arc(-4 + g.dirX*2, -4 + g.dirY*2, 1.8, 0, Math.PI * 2);
+            ctx.arc(4 + g.dirX*2, -4 + g.dirY*2, 1.8, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+          });
+
+          requestRef.current = requestAnimationFrame(updateLoop);
+        };
+
+        requestRef.current = requestAnimationFrame(updateLoop);
+        return () => cancelAnimationFrame(requestRef.current);
+      }, []);
+
+      const resetPlayerGhostPositions = () => {
+        playerRef.current.gridX = 7;
+        playerRef.current.gridY = 11;
+        playerRef.current.x = 7 * tileSize + tileSize / 2;
+        playerRef.current.y = 11 * tileSize + tileSize / 2;
+        playerRef.current.dirX = 0; playerRef.current.dirY = 0;
+        playerRef.current.nextDirX = 0; playerRef.current.nextDirY = 0;
+
+        spawnGhosts(currentLevel);
+      };
+
+      const handleStartGame = () => {
+        initAudio();
+        isGameFocused.current = true;
+        startNewGame();
+        gameStateRef.current = 'PLAYING';
+        setGameState('PLAYING');
+      };
+
+      const handleNextLevel = () => {
+        initAudio();
+        const nextLvl = currentLevel + 1;
+        setCurrentLevel(nextLvl);
+        startNewGame(true);
+        gameStateRef.current = 'PLAYING';
+        setGameState('PLAYING');
+      };
+
+      const handleRestartGame = () => {
+        initAudio();
+        isGameFocused.current = true;
+        startNewGame();
+        gameStateRef.current = 'PLAYING';
+        setGameState('PLAYING');
+      };
+
+      const handleDirClick = (dx, dy) => {
+        initAudio();
+        isGameFocused.current = true;
+        setDesiredDirection(dx, dy);
+      };
+
+      const getRandomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+
+      return (
+        <div id="math-pacman-app-root" className="bg-slate-950 text-white min-h-screen flex flex-col justify-between overflow-x-hidden selection:bg-yellow-400 selection:text-black" onClick={() => { isGameFocused.current = true; }}>
+          
+          {/* Header */}
+          <header class="w-full bg-slate-900 border-b border-yellow-500/30 py-3 px-4 shadow-lg shadow-yellow-500/5">
+            <div class="max-w-4xl mx-auto flex flex-wrap justify-between items-center gap-3">
+              <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-full border-2 border-yellow-400 bg-yellow-400 animate-pulse relative overflow-hidden flex items-center justify-center">
+                  <div class="absolute right-0 top-0 w-4 h-4 bg-slate-900 rounded-bl-full"></div>
+                </div>
+                <h1 class="text-xl md:text-2xl font-bold tracking-wider text-yellow-400">MATH PAC-MAN</h1>
+              </div>
+              <div class="flex items-center gap-2">
+                <span class="bg-yellow-500/10 text-yellow-400 text-[11px] md:text-xs px-3 py-1.5 rounded-full border border-yellow-400/30 font-semibold tracking-wide">
+                  ⏰ {liveDateTime || "Loading clock..."}
+                </span>
+              </div>
+            </div>
+          </header>
+
+          {/* Main Container */}
+          <main className="flex-grow flex flex-col items-center justify-center p-3 md:p-6 w-full max-w-4xl mx-auto">
+            
+            {/* Game Screens Panel */}
+            <div className="w-full bg-slate-900 rounded-3xl border-2 border-slate-800 p-4 shadow-2xl relative overflow-hidden flex flex-col items-center">
+              
+              {/* SCOREBOARD / STATS BAR */}
+              <div className={`w-full max-w-[450px] flex justify-between items-center mb-3 bg-slate-950/80 p-3 rounded-2xl border border-slate-800 text-xs ${gameState === 'START' ? 'hidden' : ''}`}>
+                <div className="flex flex-col items-center">
+                  <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Markah</span>
+                  <span className="text-base font-bold text-yellow-400 retro-font">{String(score).padStart(3, '0')}</span>
+                </div>
+                <div className="flex flex-col items-center">
+                  <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Level</span>
+                  <span className="text-base font-bold text-emerald-400 retro-font">{currentLevel}</span>
+                </div>
+                <div className="flex flex-col items-center">
+                  <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Nyawa</span>
+                  <div className="flex gap-0.5 text-red-500 text-xs mt-1">
+                    {lives > 0 ? '❤️ '.repeat(lives).trim() : '💀'}
+                  </div>
+                </div>
+                <div className="flex flex-col items-center">
+                  <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Baki Dot</span>
+                  <span className="text-base font-bold text-cyan-400 retro-font">{String(dotsRemaining).padStart(2, '0')}</span>
+                </div>
+                <button onClick={handleTriggerExit} className="bg-red-600/90 hover:bg-red-500 active:scale-95 text-white font-bold py-1 px-2.5 rounded-lg text-[10px] uppercase transition-all tracking-wide">
+                  🚪 Keluar
+                </button>
+              </div>
+
+              {/* CANVAS GAME CONTAINER */}
+              <div className="relative w-full max-w-[450px] aspect-square bg-slate-950 rounded-2xl overflow-hidden border-4 border-indigo-900 shadow-inner flex items-center justify-center">
+                
+                {/* Screen: START MENU & LEADERBOARD */}
+                {gameState === 'START' && (
+                  <div className="absolute inset-0 bg-slate-950 flex flex-col items-center justify-start p-4 text-center z-10 overflow-y-auto">
+                    <div className="w-14 h-14 bg-yellow-400 rounded-full flex items-center justify-center my-2 border-4 border-yellow-300 shadow-lg shadow-yellow-500/20 animate-bounce">
+                      <div className="w-7 h-7 bg-slate-950 rounded-bl-full ml-4 mt-[-4px]"></div>
+                    </div>
+                    <h2 className="text-xl font-bold text-yellow-400 mb-1 retro-font text-center leading-relaxed">MATH PAC-MAN</h2>
+                    <p className="text-slate-400 text-[11px] mb-3 max-w-xs text-center">
+                      🟡 Makan <strong class="text-white">dot biasa</strong> untuk point.<br />
+                      🌀 Makan <strong class="text-cyan-400">Math Dot Besar</strong> berkelip untuk jawab soalan!
+                    </p>
+                    
+                    {/* Game Options */}
+                    <div className="w-full max-w-xs space-y-2 mb-3 text-left">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[9px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">Operasi:</label>
+                          <select value={operation} onChange={(e) => setOperation(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs font-semibold focus:outline-none focus:border-yellow-400 text-yellow-400 text-center">
+                            <option value="tambah">Tambah (+)</option>
+                            <option value="tolak">Tolak (-)</option>
+                            <option value="darab">Darab (×)</option>
+                            <option value="bahagi">Bahagi (÷)</option>
+                            <option value="campuran">Rawak</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[9px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">Tahap:</label>
+                          <select value={difficulty} onChange={(e) => setDifficulty(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs font-semibold focus:outline-none focus:border-yellow-400 text-yellow-400 text-center">
+                            <option value="senang">Senang (Thn 1)</option>
+                            <option value="sederhana">Sederhana</option>
+                            <option value="susah">Susah</option>
+                          </select>
+                        </div>
+                      </div>
+                      <button onClick={handleStartGame} className="w-full bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-400 hover:to-amber-500 text-slate-950 font-bold py-2 px-4 rounded-xl shadow-lg shadow-yellow-500/20 transition-all transform active:scale-95 text-sm">
+                        MULA BERMAIN!
+                      </button>
+                    </div>
+
+                    {/* Leaderboard Panel */}
+                    <div className="w-full max-w-xs bg-slate-900/80 border border-slate-800 rounded-2xl p-3 mb-2 flex-grow overflow-hidden flex flex-col">
+                      <h3 className="text-yellow-400 text-[10px] font-bold retro-font mb-2 tracking-wider">🏆 CARTA JUARA (TOP 10)</h3>
+                      <div className="flex-grow overflow-y-auto max-h-[140px] text-left text-xs pr-1">
+                        <table className="w-full text-left">
+                          <thead>
+                            <tr className="border-b border-slate-800 text-slate-500 text-[9px] uppercase">
+                              <th className="py-1">Pos</th>
+                              <th>Nama</th>
+                              <th className="text-center">Lvl</th>
+                              <th className="text-right">Markah</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {leaderboard.map((item, index) => {
+                              const medal = index === 0 ? '🥇' : (index === 1 ? '🥈' : (index === 2 ? '🥉' : index + 1));
+                              return (
+                                <tr key={index} className="border-b border-slate-800/50 hover:bg-slate-800/40 text-xs">
+                                  <td className="py-1 px-1 font-bold text-yellow-500">{medal}</td>
+                                  <td className="font-semibold text-white tracking-wide">{item.name}</td>
+                                  <td className="text-center text-emerald-400 font-bold">{item.level}</td>
+                                  <td className="text-right font-extrabold text-cyan-400 retro-font text-[10px]">{item.score}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* CANVAS ELEM */}
+                <canvas ref={canvasRef} width={canvasSize} height={canvasSize} className="block w-full h-full"></canvas>
+
+                {/* Screen: LEVEL UP TRANSITION OVERLAY */}
+                {gameState === 'LEVEL_UP' && (
+                  <div className="absolute inset-0 bg-slate-950/95 flex flex-col items-center justify-center p-6 text-center z-15 backdrop-blur-sm">
+                    <div className="text-5xl mb-2">⚡</div>
+                    <h2 className="text-2xl font-bold text-emerald-400 retro-font mb-2 animate-bounce">LEVEL UP!</h2>
+                    <p className="text-slate-300 text-sm mb-6 font-semibold">Bersedia bah! Memasuki LEVEL {currentLevel + 1}. Hantu akan bertambah sekarang!</p>
+                    <button onClick={handleNextLevel} className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-3 px-8 rounded-2xl shadow-lg shadow-emerald-500/20 transition-all text-base">
+                      SEDIAP! JOM JALAN
+                    </button>
+                  </div>
+                )}
+
+                {/* Screen: EXIT CONFIRMATION MODAL */}
+                {showExitModal && (
+                  <div className="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center p-6 z-30 backdrop-blur-sm">
+                    <div className="bg-slate-900 border-2 border-red-500/40 rounded-3xl p-5 w-full max-w-sm flex flex-col items-center shadow-2xl text-center">
+                      <div className="text-red-500 text-4xl mb-2">🚪</div>
+                      <h3 className="text-sm font-bold text-red-400 retro-font mb-2 tracking-wide uppercase">KELUAR GAME?</h3>
+                      <p className="text-xs text-slate-400 mb-6 leading-relaxed">Adakah anda mahu berhenti bermain dan keluar ke paparan utama sekarang?</p>
+                      <div className="flex flex-col gap-2.5 w-full">
+                        <button onClick={handleConfirmExit} className="w-full bg-red-600 hover:bg-red-500 text-white font-bold py-2 px-4 rounded-xl text-xs transition-all active:scale-95">
+                          Keluar ke Paparan Utama
+                        </button>
+                        <button onClick={handleCancelExit} className="w-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-bold py-2 px-4 rounded-xl text-xs transition-all active:scale-95">
+                          Sambung Main
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Screen: MATH MODAL POPUP */}
+                {gameState === 'MATH_QUESTION' && currentQuestion && (
+                  <div className="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center p-6 z-20 backdrop-blur-sm">
+                    <div className="bg-slate-900 border-2 border-cyan-500/40 rounded-3xl p-5 w-full max-w-sm flex flex-col items-center shadow-2xl text-center">
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
+                        <span className="text-xs font-bold text-cyan-400 tracking-widest uppercase">SOALAN MATEMATIK!</span>
+                      </div>
+                      
+                      {/* Timer bar */}
+                      <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden mb-4 border border-slate-700">
+                        <div className={`h-full transition-all duration-100 ease-linear ${timerDanger ? 'bg-red-500' : 'bg-cyan-400'}`} style={{ width: `${timerWidth}%` }}></div>
+                      </div>
+
+                      <p className="text-3xl font-extrabold text-white my-4 tracking-wide bg-slate-950 px-6 py-3 rounded-2xl border border-slate-800 shadow-inner">
+                        {currentQuestion.text} = ?
+                      </p>
+                      <p className="text-xs text-slate-500 mb-4">Pilih jawapan betul (Dapat +2 Point):</p>
+
+                      {/* Options Grid */}
+                      <div className="grid grid-cols-2 gap-3 w-full">
+                        {currentQuestion.options.map((opt, i) => (
+                          <button key={i} onClick={() => checkAnswer(i)} className="bg-slate-800 border border-slate-700 hover:bg-slate-700 text-white font-bold py-3 px-4 rounded-xl text-base transition-all active:scale-95">
+                            {opt}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Screen: GAME OVER */}
+                {gameState === 'GAMEOVER' && (
+                  <div className="absolute inset-0 bg-slate-950/95 flex flex-col items-center justify-start p-6 text-center z-10 overflow-y-auto">
+                    <div className="text-red-500 text-4xl mt-3 animate-bounce">💀</div>
+                    <h2 class="text-lg font-bold text-red-500 mb-1 retro-font">GAME OVER</h2>
+                    <p className="text-slate-400 text-xs mb-3">Aduhai, kena tangkap hantu bah! Cuba lagi!</p>
+                    
+                    <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl mb-3 w-full max-w-xs text-left">
+                      <p className="text-[10px] text-slate-500 uppercase font-semibold text-center">Markah Akhir Anda</p>
+                      <p className="text-2xl font-extrabold text-yellow-400 retro-font mt-0.5 text-center">{score}</p>
+                      
+                      {/* Save High Score Form */}
+                      {showSaveArea ? (
+                        <div className="mt-2 pt-2 border-t border-slate-800">
+                          <label className="block text-[10px] text-cyan-400 uppercase font-bold mb-1">Simpan Rekod Nama Murid:</label>
+                          <div className="flex gap-2">
+                            <input value={playerName} onChange={(e) => setPlayerName(e.target.value)} type="text" maxLength="10" placeholder="Cth: SITI" className="flex-grow bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-yellow-400 text-yellow-400 uppercase" />
+                            <button onClick={handleSaveHighScore} className="bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold px-3 py-1.5 rounded-lg text-xs transition-all transform active:scale-95">
+                              SIMPAN
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-center text-xs text-emerald-400 font-bold mt-2 pt-2 border-t border-slate-800">
+                          ✔️ Rekod nama murid telah disimpan!
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Top 5 display in Game Over Screen */}
+                    <div className="w-full max-w-xs bg-slate-900/60 border border-slate-800 rounded-xl p-2.5 mb-3 text-left text-xs">
+                      <h4 className="text-yellow-400 text-[9px] font-bold retro-font mb-1.5 text-center">🏆 REKOD TERTINGGI SEMASA</h4>
+                      <table className="w-full text-left text-[11px]">
+                        <tbody>
+                          {leaderboard.slice(0, 5).map((item, index) => (
+                            <tr key={index} className="border-b border-slate-800/40 text-[11px]">
+                              <td className="py-0.5 font-bold text-yellow-400 w-8">#{index+1}</td>
+                              <td className="font-semibold text-slate-200">{item.name}</td>
+                              <td className="text-center text-emerald-400 font-bold">Lvl {item.level}</td>
+                              <td className="text-right font-extrabold text-cyan-400 retro-font text-[10px]">{item.score} pt</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <button onClick={handleRestartGame} className="w-full max-w-xs bg-red-600 hover:bg-red-500 text-white font-bold py-2.5 px-6 rounded-xl shadow-lg shadow-red-500/20 transition-all transform active:scale-95 text-sm">
+                      CUBA LAGI BAH!
+                    </button>
+                  </div>
+                )}
+
+                {/* Notification Toast */}
+                <div className={`absolute bottom-4 left-4 right-4 bg-slate-900 border px-4 py-2.5 rounded-xl text-center text-sm font-semibold transition-all duration-300 transform z-30 shadow-xl flex items-center justify-center gap-2 ${toast.show ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 pointer-events-none'} ${toast.success ? 'border-emerald-500/50 text-emerald-400' : 'border-red-500/50 text-red-400'}`}>
+                  <span>{toast.success ? '✔️' : '❌'}</span> <span>{toast.msg}</span>
+                </div>
+
+              </div>
+
+              {/* ON-SCREEN MOBILE CONTROLS & DESKTOP INFO */}
+              <div className="w-full max-w-[340px] mt-4 flex flex-col items-center select-none gap-2">
+                <div className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold flex items-center gap-1">
+                  💻 <span>Guna Arrow Keys / WASD di PC</span>
+                </div>
+                
+                <div className="grid grid-cols-3 gap-1.5 justify-center items-center w-[240px]">
+                  <div></div>
+                  <button onClick={() => handleDirClick(0, -1)} className="aspect-square bg-slate-800 border-b-4 border-slate-950 hover:bg-slate-700 text-white text-xl font-bold rounded-2xl flex items-center justify-center p-2.5 active:scale-90 transition-all select-none touch-none">
+                    ▲
+                  </button>
+                  <div></div>
+                  
+                  <button onClick={() => handleDirClick(-1, 0)} className="aspect-square bg-slate-800 border-b-4 border-slate-950 hover:bg-slate-700 text-white text-xl font-bold rounded-2xl flex items-center justify-center p-2.5 active:scale-90 transition-all select-none touch-none">
+                    ◀
+                  </button>
+                  <div className="aspect-square bg-slate-950/60 border border-slate-800 rounded-full flex items-center justify-center text-[10px] text-slate-600 font-bold uppercase tracking-widest pointer-events-none select-none">
+                    D-PAD
+                  </div>
+                  <button onClick={() => handleDirClick(1, 0)} className="aspect-square bg-slate-800 border-b-4 border-slate-950 hover:bg-slate-700 text-white text-xl font-bold rounded-2xl flex items-center justify-center p-2.5 active:scale-90 transition-all select-none touch-none">
+                    ▶
+                  </button>
+                  
+                  <div></div>
+                  <button onClick={() => handleDirClick(0, 1)} className="aspect-square bg-slate-800 border-b-4 border-slate-950 hover:bg-slate-700 text-white text-xl font-bold rounded-2xl flex items-center justify-center p-2.5 active:scale-90 transition-all select-none touch-none">
+                    ▼
+                  </button>
+                  <div></div>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Instruction Panel */}
+            <div className="w-full max-w-4xl bg-slate-900 border border-slate-800 rounded-3xl p-5 mt-6 shadow-xl text-xs md:text-sm text-slate-400 space-y-2">
+              <h3 className="font-bold text-yellow-400 text-sm md:text-base uppercase tracking-wider mb-2">Panduan Game Baharu:</h3>
+              <ul className="list-disc list-inside space-y-1.5 pl-1 text-slate-300">
+                <li><strong className="text-yellow-400">🟡 Dot Kecil</strong>: Makan terus untuk <strong class="text-white">1 Point</strong> tanpa sebarang soalan pop-up.</li>
+                <li><strong class="text-cyan-400 font-bold">🌀 Math Dot Besar (Berkelip)</strong>: Mengandungi soalan matematik. Jawab betul dapat <strong class="text-emerald-400 font-bold">+2 Point</strong>. Jika salah jawab, dot kekal dan Pac-man akan diundur.</li>
+                <li><strong class="text-emerald-400 font-bold">⚡ Naik Level (Level Up)</strong>: Bersihkan semua dot di skrin untuk naik level. Hantu akan bertambah di Level 2 and Level 3!</li>
+                <li><strong class="text-white">💾 Rekod Juara</strong>: Selepas Game Over, simpan nama murid untuk direkodkan di carta juara.</li>
+              </ul>
+            </div>
+          </main>
+
+          {/* Footer */}
+          <footer className="w-full py-4 text-center text-xs text-slate-600 border-t border-slate-900 mt-6 bg-slate-950">
+            <p>© 2026 Math Pac-man Arkid Sabah. Semua Hak Terpelihara.</p>
+          </footer>
+
+        </div>
+      );
+    }
+
+    // Render React App inside HTML body root
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>

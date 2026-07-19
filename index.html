@@ -959,7 +959,7 @@
                         <div>
                           <label className="block text-[9px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">Tahap:</label>
                           <select value={difficulty} onChange={(e) => setDifficulty(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs font-semibold focus:outline-none focus:border-yellow-400 text-yellow-400 text-center">
-                            <option value="senang">Senang (Tahun 1)</option>
+                            <option value="senang">Senang</option>
                             <option value="sederhana">Sederhana</option>
                           </select>
                         </div>
@@ -1009,9 +1009,9 @@
                   <div className="absolute inset-0 bg-slate-950/95 flex flex-col items-center justify-center p-6 text-center z-20 backdrop-blur-sm">
                     <div className="text-5xl mb-2">⚡</div>
                     <h2 className="text-2xl font-bold text-emerald-400 retro-font mb-2 animate-bounce">LEVEL UP!</h2>
-                    <p className="text-slate-300 text-sm mb-6 font-semibold">Bersedia bah! Memasuki LEVEL {currentLevel + 1}. Hantu akan bertambah sekarang! Soalan yang sdh betul dijawab tidak akan diulang lagi!</p>
+                    <p className="text-slate-300 text-sm mb-6 font-semibold">Bersedia memasuki LEVEL seterusnya. {currentLevel + 1}. Hantu akan bertambah sekarang! Soalan yang sdh betul dijawab tidak akan diulang lagi!</p>
                     <button onClick={handleNextLevel} className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-3 px-8 rounded-2xl shadow-lg shadow-emerald-500/20 transition-all text-base">
-                      SEDIAP! JOM JALAN
+                      SEDIA! JOM MULA!
                     </button>
                   </div>
                 )}
@@ -1021,7 +1021,7 @@
                   <div className="absolute inset-0 bg-slate-950/95 flex flex-col items-center justify-start p-6 text-center z-10 overflow-y-auto">
                     <div className="text-red-500 text-4xl mt-3 animate-bounce">💀</div>
                     <h2 className="text-lg font-bold text-red-500 mb-1 retro-font">GAME OVER</h2>
-                    <p className="text-slate-400 text-xs mb-3">Aduhai, kena tangkap hantu bah! Cuba lagi!</p>
+                    <p className="text-slate-400 text-xs mb-3">Cuba lagi!</p>
                     
                     <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl mb-3 w-full max-w-xs text-left">
                       <p className="text-[10px] text-slate-500 uppercase font-semibold text-center">Markah Akhir Anda</p>
@@ -1179,7 +1179,7 @@
 
           {/* Footer */}
           <footer className="w-full py-4 text-center text-xs text-slate-600 border-t border-slate-900 mt-6 bg-slate-950">
-            <p>© 2026 PAC-MATH Arkid Sabah. Semua Hak Terpelihara.</p>
+            <p>© 2026 PAC-MATH. Dijana oleh AI. Hak Milik dan Idea Mekatoon.</p>
           </footer>
 
         </div>
